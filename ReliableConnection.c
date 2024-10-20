@@ -142,7 +142,7 @@ int32_t ReliableSocketReceive(const Socket_t sock, uint8_t *buffer, const uint32
 					return -1;
 				}
 
-				return length;
+				return length-sizeof(uint32_t);
 			}
 
 			if(GetClock()>timeout)
@@ -280,7 +280,7 @@ int main(int argc, char **argv)
 
 		while(!_kbhit())
 		{
-			uint32_t address=NETWORK_ADDRESS(127, 0, 0, 1);
+			uint32_t address=NETWORK_ADDRESS(172, 26, 218, 132);
 			uint16_t port=12345;
 
 			var++;
