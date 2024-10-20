@@ -1,6 +1,5 @@
 ﻿#include <stdio.h>
 #include <stdlib.h>
-#include <conio.h>
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -18,6 +17,7 @@ static const uint32_t RETRY_MAGIC='R'|'e'<<8|'t'<<16|'y'<<24;
 #ifdef WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <conio.h>
 double GetClock(void)
 {
 	static uint64_t frequency=0;
@@ -33,6 +33,9 @@ double GetClock(void)
 #else
 #include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <termios.h>
 
 double GetClock(void)
 {
@@ -42,6 +45,34 @@ double GetClock(void)
 		return ts.tv_sec+(double)ts.tv_nsec/1000000000.0;
 
 	return 0.0;
+}
+
+// kbhit for *nix
+int _kbhit(void)
+{
+	struct termios oldt, newt;
+	int ch;
+	int oldf;
+
+	tcgetattr(STDIN_FILENO, &oldt);
+	newt=oldt;
+	newt.c_lflag&=~(ICANON|ECHO);
+	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+	oldf=fcntl(STDIN_FILENO, F_GETFL, 0);
+	fcntl(STDIN_FILENO, F_SETFL, oldf|O_NONBLOCK);
+
+	ch=getchar();
+
+	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+	fcntl(STDIN_FILENO, F_SETFL, oldf);
+
+	if(ch!=EOF)
+	{
+		ungetc(ch, stdin);
+		return 1;
+	}
+
+	return 0;
 }
 #endif
 
