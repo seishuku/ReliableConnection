@@ -224,7 +224,7 @@ bool ReliableSocketSend(const Socket_t sock, uint8_t *buffer, uint32_t buffer_si
 
 int main(int argc, char **argv)
 {
-	if(argc>1&&_strnicmp("-server", argv[1], 7)==0)
+	if(argc>1&&strncmp("-server", argv[1], 7)==0)
 	{
 		printf("Server mode\n");
 		server=true;
@@ -232,7 +232,7 @@ int main(int argc, char **argv)
 	else
 		printf("Client mode\n");
 
-	buffer=malloc(BUFFER_SIZE);
+	buffer=(uint8_t *)malloc(BUFFER_SIZE);
 
 	if(buffer==NULL)
 	{
