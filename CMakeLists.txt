@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD_REQUIRED True)
 
 project("ReliableConnection" LANGUAGES C)
 
-add_executable(${CMAKE_PROJECT_NAME} "ReliableConnection.c" "network.c")
+add_executable(${CMAKE_PROJECT_NAME} "ReliableConnection.c" "network.c" "transport.c")
 
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
 	target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC ws2_32.lib)

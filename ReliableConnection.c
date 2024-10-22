@@ -4,9 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "network.h"
+#include "transport.h"
 
 static bool server=false;
-static Socket_t socket=-1;
+Socket_t netsocket=-1;
 
 #define BUFFER_SIZE 32767
 static uint8_t *buffer=NULL;
@@ -263,16 +264,16 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	socket=Network_CreateSocket();
+	netsocket=Network_CreateSocket();
 
-	if(socket!=-1)
-		printf("Created socket: %d\n", socket);
+	if(netsocket!=-1)
+		printf("Created socket: %d\n", netsocket);
 	else
 		return -1;
 
 	if(server)
 	{
-		if(!Network_SocketBind(socket, NETWORK_ADDRESS(0, 0, 0, 0), 12345))
+		if(!Network_SocketBind(netsocket, NETWORK_ADDRESS(0, 0, 0, 0), 12345))
 		{
 			printf("Failed to bind socket.\n");
 			return -1;
@@ -283,10 +284,22 @@ int main(int argc, char **argv)
 
 		while(!_kbhit())
 		{
-			int32_t length=ReliableSocketReceive(socket, buffer, BUFFER_SIZE, &address, &port);
+#if 1
+			Transport_t receiver;
+
+			if(Transport_Receive(&receiver))
+			{
+				printf("Got: ");
+				for(uint32_t i=0;i<receiver.length;i++)
+					putchar(receiver.buffer[i]);
+				putchar('\n');
+			}
+#else
+			int32_t length=ReliableSocketReceive(netsocket, buffer, BUFFER_SIZE, &address, &port);
 
 			if(length>0)
 				printf("Got %d bytes on %d from %X. (%llu)\n", length, port, address, *(uint64_t *)buffer);
+#endif
 		}
 	}
 	else
@@ -294,30 +307,54 @@ int main(int argc, char **argv)
 		uint64_t var=0;
 		uint32_t count=0;
 		double avgTime=0.0;
+		bool Done=false;
 
-		while(!_kbhit())
+		while(!Done)
 		{
-			uint32_t address=NETWORK_ADDRESS(172, 26, 218, 132);
-			uint16_t port=12345;
-
-			var++;
-			memcpy(buffer, &var, sizeof(uint64_t));
-
-			double start=GetClock();
-
-			if(ReliableSocketSend(socket, buffer, sizeof(uint64_t), address, port))
-				avgTime+=(GetClock()-start)*1000.0;
-
-			if(count++>1000)
+			if(_kbhit())
 			{
-				printf("Took %lfms.                    \r", avgTime/count);
-				count=0;
-				avgTime=0.0;
+#ifdef WIN32
+				switch(_getch())
+#else
+				switch(getchar())
+#endif
+				{
+					case '\x1B':
+						Done=true;
+						break;
+
+					case ' ':
+					{
+#if 1
+						uint8_t data[]="This is a longer message that needs to be segmented";
+						Transport_Send(data, sizeof(data));
+#else
+						uint32_t address=NETWORK_ADDRESS(127, 0, 0, 1);
+						uint16_t port=12345;
+
+						var++;
+						memcpy(buffer, &var, sizeof(uint64_t));
+
+						double start=GetClock();
+
+						if(ReliableSocketSend(netsocket, buffer, sizeof(uint64_t), address, port))
+							avgTime+=(GetClock()-start)*1000.0;
+
+						if(count++>10)
+						{
+							printf("Took %lfms.                    \r", avgTime/count);
+							count=0;
+							avgTime=0.0;
+						}
+#endif
+						break;
+					}
+				}
 			}
 		}
 	}
 
-	Network_SocketClose(socket);
+	Network_SocketClose(netsocket);
 	Network_Destroy();
 
 	free(buffer);
