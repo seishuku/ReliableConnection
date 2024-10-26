@@ -11,6 +11,9 @@
 #include <errno.h>
 #endif
 
+// TODO: Need a more independant timing function for timeout calcs
+double GetClock(void);
+
 const uint32_t Network_ReceiveBufferSize=1024*1024;
 const uint32_t Network_SendBufferSize=1024*1024;
 
@@ -134,4 +137,169 @@ bool Network_SocketClose(const Socket_t sock)
 #endif
 
 	return true;
+}
+
+static const uint32_t ACK_MAGIC='A'|'c'<<8|'k'<<16|'\0'<<24;
+static const uint32_t RETRY_MAGIC='R'|'e'<<8|'t'<<16|'y'<<24;
+static const uint32_t MAX_RETRIES=3;
+static const double TIMEOUT=1.25;
+
+uint32_t crc32c(uint32_t crc, const unsigned char *buf, size_t len)
+{
+	const uint32_t poly=0xEDB88320;
+	crc=~crc;
+
+	while(len--)
+	{
+		crc^=*buf++;
+		crc=crc&1?(crc>>1)^poly:crc>>1;
+		crc=crc&1?(crc>>1)^poly:crc>>1;
+		crc=crc&1?(crc>>1)^poly:crc>>1;
+		crc=crc&1?(crc>>1)^poly:crc>>1;
+		crc=crc&1?(crc>>1)^poly:crc>>1;
+		crc=crc&1?(crc>>1)^poly:crc>>1;
+		crc=crc&1?(crc>>1)^poly:crc>>1;
+		crc=crc&1?(crc>>1)^poly:crc>>1;
+	}
+
+	return ~crc;
+}
+
+// Send will add the CRC onto the end of the buffer, the buffer must be your size + size of UINT32, so be sure to size accordingly.
+// Similarly receive does the same, but in reverse.
+int32_t ReliableSocketReceive(const Socket_t sock, const uint8_t *buffer, const uint32_t buffer_size, uint32_t *address, uint16_t *port)
+{
+	// Set up max retry count
+	int32_t tries=MAX_RETRIES;
+
+	while(tries>0)
+	{
+		// Set timeout at current time + timeout const
+		const double timeout=GetClock()+TIMEOUT;
+
+		while(1)
+		{
+			const int32_t length=Network_SocketReceive(sock, buffer, buffer_size, address, port);
+
+			if(length>0)
+			{
+				// Extract the CRC calculated by the sender
+				const uint32_t crcRecv=*(uint32_t *)(buffer+length-sizeof(uint32_t));
+				// Calculate the CRC of what was received
+				const uint32_t crc=crc32c(0, buffer, length-sizeof(uint32_t));
+
+				// Same?
+				if(crc!=crcRecv)
+				{
+					printf("ReliableSocketReceive: CRC mismatch, retrying.\n");
+
+					// Send retry
+					const uint32_t retry_magic=RETRY_MAGIC;
+					if(!Network_SocketSend(sock, (uint8_t *)&retry_magic, sizeof(uint32_t), *address, *port))
+					{
+						printf("ReliableSocketReceive: Retry send failed.\n");
+						return -1;
+					}
+
+					tries--;
+					break;
+				}
+
+				// Send acknowledgement
+				const uint32_t ack_magic=ACK_MAGIC;
+				if(!Network_SocketSend(sock, (uint8_t *)&ack_magic, sizeof(uint32_t), *address, *port))
+				{
+					printf("ReliableSocketReceive: Acknowledgement send failed.\n");
+					return -1;
+				}
+
+				// We're done, return buffer size less the CRC
+				return length-sizeof(uint32_t);
+			}
+
+			// Check if timed out
+			if(GetClock()>timeout)
+			{
+				printf("ReliableSocketReceive: Timed out.\n");
+				return -1;
+			}
+		}
+	}
+
+	printf("ReliableSocketReceive: Too many retries.\n");
+	return -1;
+}
+
+bool ReliableSocketSend(const Socket_t sock, const uint8_t *buffer, const uint32_t buffer_size, const uint32_t address, const uint16_t port)
+{
+	// Set up max retry count
+	int32_t tries=MAX_RETRIES;
+
+	// Calculate CRC and attach it to the end of the buffer
+	(*(uint32_t *)(buffer+buffer_size))=crc32c(0, buffer, buffer_size);
+
+	while(tries>0)
+	{
+		// Set timeout at current time + timeout const
+		const double timeout=GetClock()+TIMEOUT;
+
+		// Initial data send
+		if(Network_SocketSend(sock, buffer, buffer_size+sizeof(uint32_t), address, port))
+		{
+			// Read socket for incoming response
+			while(1)
+			{
+				uint32_t sAddress=0, ack=0;
+				uint16_t sPort=0;
+				int32_t length=Network_SocketReceive(sock, (uint8_t *)&ack, sizeof(uint32_t), &sAddress, &sPort);
+
+				// Got some data
+				if(length>0)
+				{
+					// Check for address and port match (is this really needed?)
+					if(sAddress==address&&sPort==port)
+					{
+						// Check response
+						if(ack==ACK_MAGIC)	// All good
+							return true;
+						else if(ack==RETRY_MAGIC)	// Retry requested, resend buffer
+						{
+							// Resend data
+							if(!Network_SocketSend(sock, buffer, buffer_size+sizeof(uint32_t), address, port))
+							{
+								printf("ReliableSocketSend: Network_SocketSend failed.\n");
+								return false;
+							}
+
+							printf("ReliableSocketSend: Retry.\n");
+							tries--;
+							break;
+						}
+					}
+					else
+					{
+						printf("ReliableSocketSend: Address/port mismatch on acknowledgement.\n");
+						return false;
+					}
+
+					return true;
+				}
+
+				// Check if timed out
+				if(GetClock()>timeout)
+				{
+					printf("ReliableSocketSend: Timed out.\n");
+					return false;
+				}
+			}
+		}
+		else
+		{
+			printf("ReliableSocketSend: Network_SocketSend failed.\n");
+			return false;
+		}
+	}
+
+	printf("ReliableSocketSend: Too many retries.\n");
+	return false;
 }

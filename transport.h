@@ -1,18 +1,17 @@
 #ifndef __TRANSPORT_H__
 #define __TRANSPORT_H__
 
-#define PACKET_MAX_DATA 8
-#define TRANSPORT_PAYLOAD_SIZE (PACKET_MAX_DATA-1)
+#define PACKET_MAX_DATA 256
 
 typedef struct
 {
-	uint8_t data[PACKET_MAX_DATA];
-	uint8_t len;
+	uint8_t data[PACKET_MAX_DATA+4];
+	size_t len;
 } Packet_t;
 
 typedef struct
 {
-	uint8_t buffer[4096];
+	uint8_t *buffer;
 	size_t length;
 	size_t offset;
 	uint8_t sequence;
