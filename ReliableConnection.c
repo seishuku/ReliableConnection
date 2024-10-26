@@ -174,32 +174,42 @@ int main(int argc, char **argv)
 		while(!_kbhit())
 		{
 #if 1
-			Transport_t receiver;
+			uint32_t address=0;
+			uint16_t port=0;
+			size_t length=0;
+			uint8_t *data=Transport_Receive(&length, &address, &port, 1.0);
 
-			if(Transport_Receive(&receiver))
+			if(data!=NULL)
 			{
 				printf("Got: ");
-				for(uint32_t i=0;i<receiver.length;i++)
-					putchar(receiver.buffer[i]);
-				putchar('\n');
+				for(uint32_t i=0;i<length;i++)
+					putchar(data[i]);
+				printf("\n From %x on port %d\n", address, port);
 
-				free(receiver.buffer);
+				free(data);
 			}
 #else
 			uint32_t address=0;
 			uint16_t port=0;
-			int32_t length=ReliableSocketReceive(netsocket, buffer, BUFFER_SIZE, &address, &port);
+
+#if 1
+			int32_t length=ReliableSocketReceive(netsocket, buffer, BUFFER_SIZE, &address, &port, 1.0);
+#else
+			int32_t length=Network_SocketReceive(netsocket, buffer, BUFFER_SIZE, &address, &port);
+#endif
 
 			if(length>0)
-				printf("Got %d bytes on %d from %X. (%llu)\n", length, port, address, *(uint64_t *)buffer);
+			{
+				printf("Got: ");
+				for(uint32_t i=0;i<length;i++)
+					putchar(buffer[i]);
+				putchar('\n');
+			}
 #endif
 		}
 	}
 	else
 	{
-		uint64_t var=0;
-		uint32_t count=0;
-		double avgTime=0.0;
 		bool Done=false;
 
 		while(!Done)
@@ -218,28 +228,22 @@ int main(int argc, char **argv)
 
 					case ' ':
 					{
-#if 1
-						double start=GetClock();
-						Transport_Send((uint8_t *)message, strlen(message));
-						printf("Took %lfms.                    \r", (GetClock()-start)*1000.0);
-#else
 						uint32_t address=NETWORK_ADDRESS(127, 0, 0, 1);
 						uint16_t port=12345;
-
-						var++;
-						memcpy(buffer, &var, sizeof(uint64_t));
-
 						double start=GetClock();
 
-						if(ReliableSocketSend(netsocket, buffer, sizeof(uint64_t), address, port))
-							avgTime+=(GetClock()-start)*1000.0;
+#if 1
+						Transport_Send((uint8_t *)message, strlen(message), address, port, 1.0);
+						printf("Took %lfms.                    \r", (GetClock()-start)*1000.0);
+#else
+						memcpy(buffer, &message, strlen(message));
 
-						if(count++>10)
-						{
-							printf("Took %lfms.                    \r", avgTime/count);
-							count=0;
-							avgTime=0.0;
-						}
+#if 0
+						ReliableSocketSend(netsocket, buffer, strlen(message), address, port);
+#else
+						Network_SocketSend(netsocket, buffer, strlen(message), address, port);
+#endif
+						printf("Took %lfms.                    \r", (GetClock()-start)*1000.0);
 #endif
 						break;
 					}

@@ -15,7 +15,7 @@ bool Network_SocketBind(const Socket_t sock, const uint32_t address, const uint1
 bool Network_SocketSend(const Socket_t sock, const uint8_t *buffer, const uint32_t buffer_size, const uint32_t address, const uint16_t port);
 int32_t Network_SocketReceive(const Socket_t sock, const uint8_t *buffer, const uint32_t buffer_size, uint32_t *address, uint16_t *port);
 bool Network_SocketClose(const Socket_t sock);
-int32_t ReliableSocketReceive(const Socket_t sock, const uint8_t *buffer, const uint32_t buffer_size, uint32_t *address, uint16_t *port);
-bool ReliableSocketSend(const Socket_t sock, const uint8_t *buffer, const uint32_t buffer_size, const uint32_t address, const uint16_t port);
+int32_t ReliableSocketReceive(const Socket_t sock, const uint8_t *buffer, const uint32_t buffer_size, uint32_t *address, uint16_t *port, const double timeout);
+bool ReliableSocketSend(const Socket_t sock, const uint8_t *buffer, const uint32_t buffer_size, const uint32_t address, const uint16_t port, const double timeout);
 
 #endif

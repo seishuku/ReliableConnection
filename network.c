@@ -166,8 +166,8 @@ uint32_t crc32c(uint32_t crc, const unsigned char *buf, size_t len)
 }
 
 // Send will add the CRC onto the end of the buffer, the buffer must be your size + size of UINT32, so be sure to size accordingly.
-// Similarly receive does the same, but in reverse.
-int32_t ReliableSocketReceive(const Socket_t sock, const uint8_t *buffer, const uint32_t buffer_size, uint32_t *address, uint16_t *port)
+// Similarly receive does the same, but in reverse, reads off the buffer past the specified length.
+int32_t ReliableSocketReceive(const Socket_t sock, const uint8_t *buffer, const uint32_t buffer_size, uint32_t *address, uint16_t *port, const double timeout)
 {
 	// Set up max retry count
 	int32_t tries=MAX_RETRIES;
@@ -175,7 +175,7 @@ int32_t ReliableSocketReceive(const Socket_t sock, const uint8_t *buffer, const 
 	while(tries>0)
 	{
 		// Set timeout at current time + timeout const
-		const double timeout=GetClock()+TIMEOUT;
+		const double time=GetClock()+timeout;
 
 		while(1)
 		{
@@ -218,7 +218,7 @@ int32_t ReliableSocketReceive(const Socket_t sock, const uint8_t *buffer, const 
 			}
 
 			// Check if timed out
-			if(GetClock()>timeout)
+			if(GetClock()>time)
 			{
 				printf("ReliableSocketReceive: Timed out.\n");
 				return -1;
@@ -230,7 +230,7 @@ int32_t ReliableSocketReceive(const Socket_t sock, const uint8_t *buffer, const 
 	return -1;
 }
 
-bool ReliableSocketSend(const Socket_t sock, const uint8_t *buffer, const uint32_t buffer_size, const uint32_t address, const uint16_t port)
+bool ReliableSocketSend(const Socket_t sock, const uint8_t *buffer, const uint32_t buffer_size, const uint32_t address, const uint16_t port, const double timeout)
 {
 	// Set up max retry count
 	int32_t tries=MAX_RETRIES;
@@ -241,7 +241,7 @@ bool ReliableSocketSend(const Socket_t sock, const uint8_t *buffer, const uint32
 	while(tries>0)
 	{
 		// Set timeout at current time + timeout const
-		const double timeout=GetClock()+TIMEOUT;
+		const double time=GetClock()+timeout;
 
 		// Initial data send
 		if(Network_SocketSend(sock, buffer, buffer_size+sizeof(uint32_t), address, port))
@@ -286,7 +286,7 @@ bool ReliableSocketSend(const Socket_t sock, const uint8_t *buffer, const uint32
 				}
 
 				// Check if timed out
-				if(GetClock()>timeout)
+				if(GetClock()>time)
 				{
 					printf("ReliableSocketSend: Timed out.\n");
 					return false;
