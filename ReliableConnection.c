@@ -177,7 +177,7 @@ int main(int argc, char **argv)
 			uint32_t address=0;
 			uint16_t port=0;
 			size_t length=0;
-			uint8_t *data=Transport_Receive(&length, &address, &port, 1.0);
+			uint8_t *data=Transport_Receive(netsocket, &length, &address, &port, 1.0);
 
 			if(data!=NULL)
 			{
@@ -229,12 +229,14 @@ int main(int argc, char **argv)
 					case ' ':
 					{
 						uint32_t address=NETWORK_ADDRESS(127, 0, 0, 1);
+//						uint32_t address=NETWORK_ADDRESS(172,26,218,132);
 						uint16_t port=12345;
 						double start=GetClock();
 
 #if 1
-						Transport_Send((uint8_t *)message, strlen(message), address, port, 1.0);
-						printf("Took %lfms.                    \r", (GetClock()-start)*1000.0);
+						Transport_Send(netsocket, (uint8_t *)message, strlen(message), address, port, 1.0);
+						double took=GetClock()-start;
+						printf("Took %lfms, %lfMB per second.                    \r", took*1000.0, (strlen(message)/took)/1000.0/1000.0);
 #else
 						memcpy(buffer, &message, strlen(message));
 

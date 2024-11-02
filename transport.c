@@ -4,7 +4,6 @@
 #include "network.h"
 #include "transport.h"
 
-extern Socket_t netsocket;
 double GetClock();
 
 #define PACKET_MAX_DATA 1024
@@ -15,27 +14,27 @@ typedef struct
 	size_t len;
 } Packet_t;
 
-static bool PacketSend(const Packet_t *frame, const uint32_t address, const uint16_t port, const double timeout)
+static bool PacketSend(const Packet_t *frame, const Socket_t sock, const uint32_t address, const uint16_t port, const double timeout)
 {
 #if 0
-	if(!Network_SocketSend(netsocket, frame->data, frame->len, address, port))
+	if(!Network_SocketSend(sock, frame->data, frame->len, address, port))
 		return false;
 #else
-	if(!ReliableSocketSend(netsocket, frame->data, frame->len, address, port, timeout))
+	if(!ReliableSocketSend(sock, frame->data, frame->len, address, port, timeout))
 		return false;
 #endif
 
 	return true;
 }
 
-static bool PacketReceive(Packet_t *frame, uint32_t *address, uint16_t *port, const double timeout)
+static bool PacketReceive(Packet_t *frame, const Socket_t sock, uint32_t *address, uint16_t *port, const double timeout)
 {
 	memset(frame, 0, sizeof(Packet_t));
 
 #if 0
-	int32_t length=Network_SocketReceive(netsocket, frame->data, PACKET_MAX_DATA+4, address, port);
+	int32_t length=Network_SocketReceive(sock, frame->data, PACKET_MAX_DATA+4, address, port);
 #else
-	int32_t length=ReliableSocketReceive(netsocket, frame->data, PACKET_MAX_DATA+4, address, port, timeout);
+	int32_t length=ReliableSocketReceive(sock, frame->data, PACKET_MAX_DATA+4, address, port, timeout);
 #endif
 
 	if(length>0)
@@ -47,7 +46,7 @@ static bool PacketReceive(Packet_t *frame, uint32_t *address, uint16_t *port, co
 	return false;
 }
 
-bool Transport_Send(const uint8_t *data, const size_t len, const uint32_t address, const uint16_t port, const double timeout)
+bool Transport_Send(const Socket_t sock, const uint8_t *data, const size_t len, const uint32_t address, const uint16_t port, const double timeout)
 {
 	size_t offset=0;
 	uint8_t sequence=0;
@@ -64,7 +63,7 @@ bool Transport_Send(const uint8_t *data, const size_t len, const uint32_t addres
 		frame.len=len+3;
 
 		// Send the frame
-		if(!PacketSend(&frame, address, port, timeout))
+		if(!PacketSend(&frame, sock, address, port, timeout))
 			return false;
 	}
 	else
@@ -82,7 +81,7 @@ bool Transport_Send(const uint8_t *data, const size_t len, const uint32_t addres
 		offset=PACKET_MAX_DATA-3;   // Track data sent
 
 		// Send the frame
-		if(!PacketSend(&frame, address, port, timeout))
+		if(!PacketSend(&frame, sock, address, port, timeout))
 			return false;
 
 		while(offset<len)
@@ -99,7 +98,7 @@ bool Transport_Send(const uint8_t *data, const size_t len, const uint32_t addres
 			offset+=bytes_to_copy;
 
 			// Send the frame
-			if(!PacketSend(&frame, address, port, timeout))
+			if(!PacketSend(&frame, sock, address, port, timeout))
 				return false;
 		}
 	}
@@ -107,7 +106,7 @@ bool Transport_Send(const uint8_t *data, const size_t len, const uint32_t addres
 	return true;
 }
 
-uint8_t *Transport_Receive(size_t *length, uint32_t *address, uint16_t *port, const double timeout)
+uint8_t *Transport_Receive(const Socket_t sock, size_t *length, uint32_t *address, uint16_t *port, const double timeout)
 {
 	uint8_t *buffer=NULL;
 	size_t offset=0;
@@ -122,7 +121,7 @@ uint8_t *Transport_Receive(size_t *length, uint32_t *address, uint16_t *port, co
 
 		memset(&frame, 0, sizeof(Packet_t));
 
-		if(!PacketReceive(&frame, address, port, timeout))
+		if(!PacketReceive(&frame, sock, address, port, timeout))
 		{
 			if(GetClock()>time)
 			{

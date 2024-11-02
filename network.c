@@ -17,6 +17,27 @@ double GetClock(void);
 const uint32_t Network_ReceiveBufferSize=1024*1024;
 const uint32_t Network_SendBufferSize=1024*1024;
 
+#ifdef _DEBUG
+#ifdef WIN32
+static void Network_GetError(void)
+{
+	int error=WSAGetLastError();
+	LPSTR messageBuffer=NULL;
+	FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER|FORMAT_MESSAGE_FROM_SYSTEM|FORMAT_MESSAGE_IGNORE_INSERTS, NULL, error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&messageBuffer, 0, NULL);
+	printf("Error: %d - %s\n", error, messageBuffer);
+}
+#else
+static void Network_GetError(void)
+{
+	printf("Error: %d - %s\n", strerror(errno))
+}
+#endif
+#else
+static void Network_GetError(void)
+{
+}
+#endif
+
 bool Network_Init(void)
 {
 #ifdef WIN32
@@ -25,7 +46,8 @@ bool Network_Init(void)
 	// Initialize Winsock
 	if(WSAStartup(MAKEWORD(2, 2), &WSAData)!=0)
 	{
-		printf("Network_Init(): WSAStartup failed: %d\n", WSAGetLastError());
+		printf("Network_Init(): WSAStartup failed: \n");
+		Network_GetError();
 		return false;
 	}
 #endif
@@ -47,6 +69,7 @@ Socket_t Network_CreateSocket(void)
 	if(sock==-1)
 	{
 		printf("Network_CreateSocket() failed.\n");
+		Network_GetError();
 		return -1;
 	}
 
@@ -62,6 +85,7 @@ Socket_t Network_CreateSocket(void)
 	if(ioctlsocket(sock, FIONBIO, &enabled)==-1)
 	{
 		printf("Network_CreateSocket() FIONBIO enable failed.\n");
+		Network_GetError();
 		return -1;
 	}
 #else
@@ -69,6 +93,7 @@ Socket_t Network_CreateSocket(void)
 	if(fcntl(sock, F_SETFD, flags|O_NONBLOCK))
 	{
 		printf("Network_CreateSocket() O_NONBLOCK enable failed.\n");
+		Network_GetError();
 		return -1;
 	}
 #endif
@@ -87,6 +112,7 @@ bool Network_SocketBind(const Socket_t sock, const uint32_t address, const uint1
 	if(bind(sock, (struct sockaddr *)&sockaddr_in, sizeof(sockaddr_in))==-1)
 	{
 		printf("Network_SocketBind() failed.");
+		Network_GetError();
 		return false;
 	}
 
@@ -104,6 +130,7 @@ bool Network_SocketSend(const Socket_t sock, const uint8_t *buffer, const uint32
 	if(sendto(sock, (const char *)buffer, buffer_size, 0, (struct sockaddr *)&server_address, sizeof(server_address))==-1)
 	{
 		printf("Network_SocketSend() failed.\n");
+		Network_GetError();
 		return false;
 	}
 
@@ -122,6 +149,9 @@ int32_t Network_SocketReceive(const Socket_t sock, const uint8_t *buffer, const 
 
 	*address=ntohl(from.sin_addr.s_addr);
 	*port=ntohs(from.sin_port);
+
+	if(bytes_received<0)
+		Network_GetError();
 
 	return bytes_received;
 }
@@ -142,7 +172,6 @@ bool Network_SocketClose(const Socket_t sock)
 static const uint32_t ACK_MAGIC='A'|'c'<<8|'k'<<16|'\0'<<24;
 static const uint32_t RETRY_MAGIC='R'|'e'<<8|'t'<<16|'y'<<24;
 static const uint32_t MAX_RETRIES=3;
-static const double TIMEOUT=1.25;
 
 uint32_t crc32c(uint32_t crc, const unsigned char *buf, size_t len)
 {
