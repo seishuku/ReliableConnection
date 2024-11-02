@@ -49,18 +49,18 @@ static bool PacketReceive(Packet_t *frame, const Socket_t sock, uint32_t *addres
 bool Transport_Send(const Socket_t sock, const uint8_t *data, const size_t len, const uint32_t address, const uint16_t port, const double timeout)
 {
 	size_t offset=0;
-	uint8_t sequence=0;
+	uint32_t sequence=1;
 	Packet_t frame;
 
-	if(len<=(PACKET_MAX_DATA-3))
+	if(len<=(PACKET_MAX_DATA-sizeof(uint32_t)))
 	{
 		// Data size is small enough to fit in one frame, so send single frame:
-		frame.data[0]=0x00;					// 0x00 single frame flag
-		frame.data[1]=(len>>8)&0xFF;		// Upper 8 bits of length
-		frame.data[2]=len&0xFF;				// Lower 8 bits of length
-		memcpy(&frame.data[3], data, len);	// Copy data
+		// Upper 30bits for size, lower 4bits for frame type
+		uint32_t header=((len&0xFFFFFFF)<<4)|0;
+		memcpy(frame.data, &header, sizeof(uint32_t));	// Copy header
+		memcpy(frame.data+sizeof(uint32_t), data, len);	// Copy data
 
-		frame.len=len+3;
+		frame.len=len+sizeof(uint32_t);
 
 		// Send the frame
 		if(!PacketSend(&frame, sock, address, port, timeout))
@@ -69,37 +69,35 @@ bool Transport_Send(const Socket_t sock, const uint8_t *data, const size_t len, 
 	else
 	{
 		// Data is too big for single frame, send first frame here:
-		sequence=1;
-
-		frame.data[0]=0x10;									// 0x10 first frame flag
-		frame.data[1]=(len>>8)&0xFF;						// Upper 8 bits of length
-		frame.data[2]=len&0xFF;								// Lower 8 bits of length
-		memcpy(&frame.data[3], data, PACKET_MAX_DATA-3);	// Copy data
+		// Upper 30bits for size, lower 4bits for frame type
+		uint32_t header=((len&0xFFFFFFF)<<4)|1;
+		memcpy(frame.data, &header, sizeof(uint32_t));									// Copy header
+		memcpy(frame.data+sizeof(uint32_t), data, PACKET_MAX_DATA-sizeof(uint32_t));	// Copy data
 
 		frame.len=PACKET_MAX_DATA;
-
-		offset=PACKET_MAX_DATA-3;   // Track data sent
 
 		// Send the frame
 		if(!PacketSend(&frame, sock, address, port, timeout))
 			return false;
 
+		offset=PACKET_MAX_DATA-sizeof(uint32_t);   // Track data sent
+
 		while(offset<len)
 		{
-			frame.data[0]=0x20;		// 0x20 consecutive frame flag
-			frame.data[1]=sequence;	// Sequence number
+			size_t bytes_to_copy=(len-offset)<PACKET_MAX_DATA-sizeof(uint32_t)?(len-offset):PACKET_MAX_DATA-sizeof(uint32_t);
 
-			size_t bytes_to_copy=(len-offset)<PACKET_MAX_DATA-2?(len-offset):PACKET_MAX_DATA-2;
-			memcpy(&frame.data[2], data+offset, bytes_to_copy);
+			uint32_t header=((sequence&0xFFFFFFF)<<4)|2;
+			memcpy(frame.data, &header, sizeof(uint32_t));		// Copy header
+			memcpy(frame.data+sizeof(uint32_t), data+offset, bytes_to_copy);	// Copy data
 
-			frame.len=bytes_to_copy+2;
-
-			sequence++;
-			offset+=bytes_to_copy;
+			frame.len=bytes_to_copy+sizeof(uint32_t);
 
 			// Send the frame
 			if(!PacketSend(&frame, sock, address, port, timeout))
 				return false;
+
+			sequence++;
+			offset+=bytes_to_copy;
 		}
 	}
 
@@ -110,7 +108,7 @@ uint8_t *Transport_Receive(const Socket_t sock, size_t *length, uint32_t *addres
 {
 	uint8_t *buffer=NULL;
 	size_t offset=0;
-	uint8_t sequence=0;
+	uint32_t sequence=1;
 	double time=GetClock()+timeout;
 
 	*length=0;
@@ -135,13 +133,14 @@ uint8_t *Transport_Receive(const Socket_t sock, size_t *length, uint32_t *addres
 		}
 
 		// Determine the type of frame
-		uint8_t pci_type=frame.data[0];
+		uint32_t header=0;
+		memcpy(&header, frame.data, sizeof(uint32_t));
 
-		switch(pci_type)
+		switch(header&0xF)
 		{
-			case 0x00:	// Single frame
+			case 0:	// Single frame
 			{
-				uint16_t len=((frame.data[1]<<8)|frame.data[2])&0xFFFF;
+				uint32_t len=header>>4;
 
 				if(len)
 					buffer=(uint8_t *)malloc(len);
@@ -152,16 +151,16 @@ uint8_t *Transport_Receive(const Socket_t sock, size_t *length, uint32_t *addres
 					return NULL;
 				}
 
-				memcpy(buffer, &frame.data[3], len);
+				memcpy(buffer, frame.data+sizeof(uint32_t), len);
 
 				*length=len;
 				offset=len;
 				break;
 			}
 
-			case 0x10:	// First frame
+			case 1:	// First frame
 			{
-				uint16_t len=((frame.data[1]<<8)|frame.data[2])&0xFFFF;
+				uint32_t len=header>>4;
 
 				if(len)
 					buffer=(uint8_t *)malloc(len);
@@ -172,17 +171,16 @@ uint8_t *Transport_Receive(const Socket_t sock, size_t *length, uint32_t *addres
 					return NULL;
 				}
 
-				memcpy(buffer, &frame.data[3], PACKET_MAX_DATA-3);
+				memcpy(buffer, frame.data+sizeof(uint32_t), PACKET_MAX_DATA-sizeof(uint32_t));
 
 				*length=len;
-				offset=PACKET_MAX_DATA-3;
-				sequence=1;
+				offset=PACKET_MAX_DATA-sizeof(uint32_t);
 				break;
 			}
 
-			case 0x20:	// Consecutive frame
+			case 2:	// Consecutive frame
 			{
-				uint8_t seq_num=frame.data[1];
+				uint32_t seq_num=header>>4;
 
 				// Sequence number mismatch
 				if(seq_num!=sequence)
@@ -191,9 +189,9 @@ uint8_t *Transport_Receive(const Socket_t sock, size_t *length, uint32_t *addres
 					return NULL;
 				}
 
-				size_t bytes_to_copy=*length-offset<PACKET_MAX_DATA-2?*length-offset:PACKET_MAX_DATA-2;
+				size_t bytes_to_copy=*length-offset<PACKET_MAX_DATA-sizeof(uint32_t)?*length-offset:PACKET_MAX_DATA-sizeof(uint32_t);
 
-				memcpy(&buffer[offset], &frame.data[2], bytes_to_copy);
+				memcpy(buffer+offset, frame.data+sizeof(uint32_t), bytes_to_copy);
 
 				offset+=bytes_to_copy;
 				sequence++;
